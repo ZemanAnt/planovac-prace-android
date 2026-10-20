@@ -44,29 +44,47 @@ public class MainActivity extends Activity {
         int pad = (int)(24 * getResources().getDisplayMetrics().density);
         view.setPadding(pad, pad, pad, pad);
         TextView label = new TextView(this);
-        label.setText("Zadejte adresu Plánovače práce (HTTPS), například https://server.example.cz. Nezabezpečené HTTP funguje pouze v místní síti.");
+        label.setText("Připojení k serveru Plánovače práce");
+        label.setTextSize(20);
         view.addView(label);
-        EditText input = new EditText(this);
-        input.setSingleLine();
-        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
-        input.setHint("https://adresa-serveru");
-        input.setText(baseUrl);
-        view.addView(input);
+        Uri previous = Uri.parse(baseUrl.isEmpty() ? "http://10.0.0.180:3000" : baseUrl);
+        EditText ipInput = new EditText(this);
+        ipInput.setSingleLine(true);
+        ipInput.setInputType(android.text.InputType.TYPE_CLASS_PHONE);
+        ipInput.setHint("IP adresa");
+        ipInput.setText(previous.getHost() != null ? previous.getHost() : "10.0.0.180");
+        view.addView(ipInput);
+        EditText portInput = new EditText(this);
+        portInput.setSingleLine(true);
+        portInput.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        portInput.setHint("Port");
+        portInput.setText(previous.getPort() > 0 ? String.valueOf(previous.getPort()) : "3000");
+        view.addView(portInput);
+        TextView note = new TextView(this);
+        note.setText("V místní síti se automaticky použije HTTP. Telefon musí být ve stejné síti jako server.");
+        view.addView(note);
         Button connect = new Button(this);
         connect.setText("Připojit");
         view.addView(connect);
         setContentView(view);
         connect.setOnClickListener(v -> {
-            String value = input.getText().toString().trim().replaceAll("/+$", "");
-            Uri uri = Uri.parse(value);
-            String host = uri.getHost(), scheme = uri.getScheme();
-            boolean local = host != null && (host.equalsIgnoreCase("localhost") || host.endsWith(".local") || host.startsWith("192.168.") || host.startsWith("10.") || host.matches("172\\.(1[6-9]|2[0-9]|3[01])\\..+"));
-            if (host == null || uri.getUserInfo() != null || uri.getPort() > 65535 || !("https".equalsIgnoreCase(scheme) || ("http".equalsIgnoreCase(scheme) && local))) {
-                input.setError("Zadejte platnou HTTPS adresu nebo místní HTTP adresu.");
-                return;
+            String host = ipInput.getText().toString().trim();
+            String portText = portInput.getText().toString().trim();
+            String[] octets = host.split("\\.", -1);
+            boolean validIp = octets.length == 4;
+            if (validIp) for (String octet : octets) {
+                try {
+                    int number = Integer.parseInt(octet);
+                    if (number < 0 || number > 255 || octet.length() > 3 || octet.isEmpty()) validIp = false;
+                } catch (NumberFormatException e) { validIp = false; }
             }
-            baseUrl = value;
-            prefs.edit().putString("server_url", value).apply();
+            if (!validIp) { ipInput.setError("Zadejte platnou IPv4 adresu, například 10.0.0.180"); return; }
+            int port;
+            try { port = Integer.parseInt(portText); }
+            catch (NumberFormatException e) { portInput.setError("Zadejte číslo portu"); return; }
+            if (port < 1 || port > 65535) { portInput.setError("Port musí být 1 až 65535"); return; }
+            baseUrl = "http://" + host + ":" + port;
+            prefs.edit().putString("server_url", baseUrl).apply();
             launch();
         });
     }
