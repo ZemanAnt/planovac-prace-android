@@ -1,0 +1,12 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'cz.hqs.planovac'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'cz.hqs.planovac'
+        minSdk 26
+        targetSdk 35
+        versionCode 21344
+        versionName '2.13.44'
+    }
+}
