@@ -13,6 +13,8 @@ import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceError;
+import android.graphics.Bitmap;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -28,6 +30,7 @@ public class MainActivity extends Activity {
     private PermissionRequest cameraRequest;
     private SharedPreferences prefs;
     private String baseUrl;
+    private boolean initialLoadFailed;
 
     @Override public void onCreate(Bundle bundle) {
         super.onCreate(bundle);
@@ -68,10 +71,12 @@ public class MainActivity extends Activity {
         });
     }
     private void launch() {
+        initialLoadFailed = false;
         web = new WebView(this);
         setContentView(web);
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setDomStorageEnabled(true);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(true);
@@ -79,11 +84,36 @@ public class MainActivity extends Activity {
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, false);
         web.setWebViewClient(new WebViewClient() {
+            @Override public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+            }
+            @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                super.onReceivedError(view, request, error);
+                if (request.isForMainFrame() && !initialLoadFailed) {
+                    initialLoadFailed = true;
+                    new AlertDialog.Builder(MainActivity.this)
+                        .setTitle("Nepodařilo se otevřít server")
+                        .setMessage("Adresa: " + request.getUrl() + "\\nChyba WebView (" + error.getErrorCode() + "): " + error.getDescription() + "\\n\\nZkontrolujte Wi-Fi a dostupnost stejné adresy v prohlížeči telefonu.")
+                        .setPositiveButton("Zkusit znovu", (dialog, which) -> { initialLoadFailed = false; web.reload(); })
+                        .setNegativeButton("Změnit adresu", (dialog, which) -> { web.destroy(); web = null; setup(); })
+                        .show();
+                }
+            }
+            @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, android.webkit.WebResourceResponse response) {
+                super.onReceivedHttpError(view, request, response);
+                if (request.isForMainFrame() && !initialLoadFailed && response.getStatusCode() >= 400) {
+                    initialLoadFailed = true;
+                    new AlertDialog.Builder(MainActivity.this).setTitle("Server vrátil HTTP " + response.getStatusCode())
+                        .setMessage("Adresa: " + request.getUrl() + "\\nZkontrolujte cílovou stránku nebo přihlášení.")
+                        .setPositiveButton("Zkusit znovu", (dialog, which) -> { initialLoadFailed = false; web.reload(); })
+                        .setNegativeButton("Změnit adresu", (dialog, which) -> { web.destroy(); web = null; setup(); }).show();
+                }
+            }
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri link = request.getUrl();
                 Uri configured = Uri.parse(baseUrl);
                 if (link.getHost() != null && link.getHost().equalsIgnoreCase(configured.getHost()) && link.getScheme().equalsIgnoreCase(configured.getScheme()) && link.getPort() == configured.getPort()) return false;
-                if ("https".equalsIgnoreCase(link.getScheme()) || "mailto".equalsIgnoreCase(link.getScheme()) || "tel".equalsIgnoreCase(link.getScheme())) {
+                if ("https".equalsIgnoreCase(link.getScheme()) || "http".equalsIgnoreCase(link.getScheme()) || "mailto".equalsIgnoreCase(link.getScheme()) || "tel".equalsIgnoreCase(link.getScheme())) {
                     try { startActivity(new Intent(Intent.ACTION_VIEW, link)); } catch (Exception ignored) {}
                 }
                 return true;
